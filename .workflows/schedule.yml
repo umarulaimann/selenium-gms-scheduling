@@ -1,0 +1,29 @@
+name: Run Selenium Script Daily
+
+# Schedule to run at 3:30 PM Kuala Lumpur time (7:30 AM UTC)
+on:
+  schedule:
+    - cron: "30 7 * * *"
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run the Selenium script
+        run: |
+          python main.py
