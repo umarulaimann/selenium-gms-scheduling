@@ -41,6 +41,9 @@ python main.py
   ```
   C:\Users\umarul\OneDrive - Gas Malaysia Berhad\GMS Manual\Scheduling\2025\51. March 2025\Network (Monthly)
   ```
+  However, this will be changed later due to requirement to run on cloud. This path will be changed to Microsoft SharePoint integration which the data from the automation    
+  will be downloaded into
+  
 - Logging is enabled to track downloaded and skipped files.
 
 ## Cloud Execution (GitHub Actions)
