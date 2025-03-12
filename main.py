@@ -2,7 +2,12 @@ import os
 import time
 import shutil
 import traceback
+import logging
 from datetime import datetime, timedelta
+
+import msal
+import requests
+
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -12,13 +17,16 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import WebDriverException, TimeoutException, NoSuchElementException
-import logging
 
-# Set custom download directory
-base_download_dir = r"C:\Users\umarul\OneDrive - Gas Malaysia Berhad\GMS Manual\Scheduling\2025\51. March 2025\Network (Monthly)"
+# ---------------------------------------------------------------------------
+# Configuration for local downloads and dynamic folder creation
+# For cloud automation, we use a relative path within the runner's workspace.
+base_local_dir = os.path.join(os.getcwd(), "downloads")
+current_month_folder = datetime.now().strftime("%B %Y")
+base_download_dir = os.path.join(base_local_dir, current_month_folder)
 os.makedirs(base_download_dir, exist_ok=True)
 
-# Setup logging: all logs will be written to a file in the download directory.
+# Setup logging: logs will be written to a file in the download directory.
 log_filename = os.path.join(base_download_dir, f"Tracking Networks Downloaded and Skipped [{datetime.now().strftime('%Y-%m-%d')}].txt")
 logging.basicConfig(
     level=logging.INFO,
@@ -36,13 +44,55 @@ logger.addHandler(console_handler)
 
 logger.info("Starting script...")
 
+# ---------------------------------------------------------------------------
+# Function to obtain an access token from Azure AD using MSAL
+def get_access_token():
+    CLIENT_ID = os.environ.get("CLIENT_ID")
+    CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
+    TENANT_ID = os.environ.get("TENANT_ID")
+    authority = f"https://login.microsoftonline.com/{TENANT_ID}"
+    app = msal.ConfidentialClientApplication(
+        CLIENT_ID,
+        authority=authority,
+        client_credential=CLIENT_SECRET
+    )
+    scope = ["https://graph.microsoft.com/.default"]
+    result = app.acquire_token_for_client(scopes=scope)
+    if "access_token" in result:
+        return result["access_token"]
+    else:
+        raise Exception("Could not obtain access token: " + str(result))
+
+# ---------------------------------------------------------------------------
+# Function to upload a file to SharePoint via Microsoft Graph API
+def upload_file_to_sharepoint(local_file_path, sharepoint_folder, file_name):
+    # Retrieve SharePoint parameters from environment variables
+    SHAREPOINT_SITE = os.environ.get("SHAREPOINT_SITE")  # e.g., "gasmalaysia.sharepoint.com"
+    SITE_PATH = os.environ.get("SITE_PATH")              # e.g., "sites/GasManagementandMonitoringGMM"
+    access_token = get_access_token()
+    headers = {
+        "Authorization": "Bearer " + access_token,
+        "Content-Type": "application/octet-stream"
+    }
+    # Construct the upload URL to upload the file to the specified folder.
+    upload_url = f"https://graph.microsoft.com/v1.0/sites/{SHAREPOINT_SITE}:/{SITE_PATH}:/drive/root:/{sharepoint_folder}/{file_name}:/content"
+    
+    with open(local_file_path, 'rb') as file_stream:
+        response = requests.put(upload_url, headers=headers, data=file_stream)
+    
+    if response.status_code in (200, 201):
+        logger.info(f"✅ File '{file_name}' uploaded successfully to SharePoint folder '{sharepoint_folder}'.")
+    else:
+        logger.error(f"❌ Error uploading file '{file_name}': {response.status_code} {response.text}")
+
+# ---------------------------------------------------------------------------
 # Configure Chrome options for automatic downloading in headless mode
 chrome_options = Options()
 chrome_options.add_argument("--headless")               # Run in headless mode
 chrome_options.add_argument("--disable-gpu")            # Disable GPU usage
 chrome_options.add_argument("--no-sandbox")             # Bypass OS security model
 chrome_options.add_argument("--disable-dev-shm-usage")    # Overcome limited resource problems
-chrome_options.add_argument("--start-maximized")        # Optional: start maximized (won't display in headless mode)
+chrome_options.add_argument("--start-maximized")        # Optional: start maximized
 
 chrome_prefs = {
     "download.default_directory": base_download_dir,
@@ -52,6 +102,7 @@ chrome_prefs = {
 }
 chrome_options.add_experimental_option("prefs", chrome_prefs)
 
+# ---------------------------------------------------------------------------
 # Function to initialize the WebDriver
 def init_driver():
     global driver, wait
@@ -69,15 +120,18 @@ def reinitialize_driver():
     try:
         driver.quit()
     except Exception:
-        pass  # in case already closed
+        pass
     init_driver()
     try:
         driver.get("https://gms.gasmalaysia.com/pltgtm/cmd.openseal?openSEAL_ck=ViewHome")
+        # Retrieve website credentials from environment variables
+        website_username = os.environ.get("WEBSITE_USERNAME")
+        website_password = os.environ.get("WEBSITE_PASSWORD")
         username_field = wait.until(EC.visibility_of_element_located((By.ID, "UserCtrl")))
         password_field = wait.until(EC.visibility_of_element_located((By.ID, "PwdCtrl")))
-        username_field.send_keys("pltadmin")
+        username_field.send_keys(website_username)
         time.sleep(2)
-        password_field.send_keys("pltadmin@2020")
+        password_field.send_keys(website_password)
         time.sleep(2)
         login_button = wait.until(EC.element_to_be_clickable((By.NAME, "btnLogin")))
         login_button.click()
@@ -169,7 +223,10 @@ def click_export_button():
         logger.info(f"⚠️ Export button not found or clickable: {e}. Skipping this network.")
         return False
 
-# Calculate the first day of the current month and the next day from today
+# ---------------------------------------------------------------------------
+# Calculate dynamic dates:
+# - Start date: always the 1st day of the current month.
+# - End date: always the next day from today.
 current_date = datetime.now()
 start_date_str = f"01/{current_date.month:02d}/{current_date.year}"
 end_date = current_date + timedelta(days=1)
@@ -180,14 +237,18 @@ logger.info(f"Dynamic date range - Start: {start_date_str}, End: {end_date_str}"
 downloaded_networks = []
 skipped_networks = []
 
-# First, retrieve network names once (so reinitialization does not affect this list)
+# ---------------------------------------------------------------------------
+# Retrieve network names (once, to avoid reinitialization issues)
 try:
     driver.get("https://gms.gasmalaysia.com/pltgtm/cmd.openseal?openSEAL_ck=ViewHome")
+    # Retrieve website credentials securely from environment variables
+    website_username = os.environ.get("WEBSITE_USERNAME")
+    website_password = os.environ.get("WEBSITE_PASSWORD")
     username_field = wait.until(EC.visibility_of_element_located((By.ID, "UserCtrl")))
     password_field = wait.until(EC.visibility_of_element_located((By.ID, "PwdCtrl")))
-    username_field.send_keys("pltadmin")
+    username_field.send_keys(website_username)
     time.sleep(2)
-    password_field.send_keys("pltadmin@2020")
+    password_field.send_keys(website_password)
     time.sleep(2)
     login_button = wait.until(EC.element_to_be_clickable((By.NAME, "btnLogin")))
     login_button.click()
@@ -203,13 +264,14 @@ try:
     time.sleep(2)
     network_options = driver.find_elements(By.XPATH, "//ul[@id='NetworkCode_listbox']/li")
     network_names = [option.text for option in network_options]
-    network_dropdown.click()
+    network_dropdown.click()  # Close the dropdown
     logger.info(f"🔍 Found {len(network_names)} networks: {network_names}")
 except Exception as e:
     logger.info(traceback.format_exc())
     driver.quit()
     raise e
 
+# ---------------------------------------------------------------------------
 # Process each network with retry logic on WebDriverException
 for network in network_names:
     network_retries = 0
@@ -222,7 +284,7 @@ for network in network_names:
             select_dropdown(1, network)
             select_dropdown(2, "All")
             select_dropdown(3, "GJ")
-            # Set the start date (1st of current month) and the end date (next day)
+            # Set dynamic dates
             set_date_input(start_date_str, start=True)
             set_date_input(end_date_str, start=False)
             search_button = wait.until(EC.element_to_be_clickable((By.ID, "search")))
@@ -235,9 +297,12 @@ for network in network_names:
                 break
             downloaded_file = wait_for_download(old_files)
             if downloaded_file:
-                new_file_path = os.path.join(base_download_dir, format_network_name(network))
+                new_file_name = format_network_name(network)
+                new_file_path = os.path.join(base_download_dir, new_file_name)
                 shutil.move(downloaded_file, new_file_path)
                 logger.info(f"✅ Renamed '{downloaded_file}' to '{new_file_path}'")
+                # Upload the file to SharePoint
+                upload_file_to_sharepoint(new_file_path, current_month_folder, new_file_name)
                 downloaded_networks.append(network)
             else:
                 logger.info(f"⚠️ No file downloaded for network '{network}'.")
