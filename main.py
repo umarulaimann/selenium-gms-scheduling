@@ -2,7 +2,7 @@ import os
 import time
 import shutil
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -14,10 +14,8 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import WebDriverException, TimeoutException, NoSuchElementException
 import logging
 
-# Set custom download directory to SharePoint folder path placeholder.
-# Replace the placeholder below with your actual SharePoint folder path and include
-# any necessary secret keys, client keys, tenant id, etc. once available.
-base_download_dir = r"\\YourSharePointFolderPath\To\Download\Directory"
+# Set custom download directory
+base_download_dir = r"C:\Users\umarul\OneDrive - Gas Malaysia Berhad\GMS Manual\Scheduling\2025\51. March 2025\Network (Monthly)"
 os.makedirs(base_download_dir, exist_ok=True)
 
 # Setup logging: all logs will be written to a file in the download directory.
@@ -171,6 +169,13 @@ def click_export_button():
         logger.info(f"⚠️ Export button not found or clickable: {e}. Skipping this network.")
         return False
 
+# Calculate the first day of the current month and the next day from today
+current_date = datetime.now()
+start_date_str = f"01/{current_date.month:02d}/{current_date.year}"
+end_date = current_date + timedelta(days=1)
+end_date_str = f"{end_date.day:02d}/{end_date.month:02d}/{end_date.year}"
+logger.info(f"Dynamic date range - Start: {start_date_str}, End: {end_date_str}")
+
 # Lists to track summary
 downloaded_networks = []
 skipped_networks = []
@@ -217,9 +222,9 @@ for network in network_names:
             select_dropdown(1, network)
             select_dropdown(2, "All")
             select_dropdown(3, "GJ")
-            # Directly set the start and end dates in the input fields.
-            set_date_input("01/03/2025", start=True)
-            set_date_input("31/03/2025", start=False)
+            # Set the start date (1st of current month) and the end date (next day)
+            set_date_input(start_date_str, start=True)
+            set_date_input(end_date_str, start=False)
             search_button = wait.until(EC.element_to_be_clickable((By.ID, "search")))
             search_button.click()
             wait_for_loading()
