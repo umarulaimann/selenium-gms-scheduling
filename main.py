@@ -4,6 +4,7 @@ import shutil
 import traceback
 import logging
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo  # <-- For Python 3.9+ time zone support
 import zipfile
 
 from selenium import webdriver
@@ -19,12 +20,16 @@ from selenium.common.exceptions import WebDriverException, TimeoutException, NoS
 # ---------------------------------------------------------------------------
 # Configuration for local downloads and dynamic folder creation
 base_local_dir = os.path.join(os.getcwd(), "downloads")
+# Current month folder uses 'Month YYYY' format
 current_month_folder = datetime.now().strftime("%B %Y")
 base_download_dir = os.path.join(base_local_dir, current_month_folder)
 os.makedirs(base_download_dir, exist_ok=True)
 
 # Setup logging: logs will be written to a file in the download directory.
-log_filename = os.path.join(base_download_dir, f"Tracking Networks Downloaded and Skipped [{datetime.now().strftime('%Y-%m-%d')}].txt")
+log_filename = os.path.join(
+    base_download_dir,
+    f"Tracking Networks Downloaded and Skipped [{datetime.now().strftime('%Y-%m-%d')}].txt"
+)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -47,7 +52,7 @@ chrome_options = Options()
 chrome_options.add_argument("--headless")               # Run in headless mode
 chrome_options.add_argument("--disable-gpu")            # Disable GPU usage
 chrome_options.add_argument("--no-sandbox")             # Bypass OS security model
-chrome_options.add_argument("--disable-dev-shm-usage")    # Overcome limited resource problems
+chrome_options.add_argument("--disable-dev-shm-usage")  # Overcome limited resource problems
 chrome_options.add_argument("--start-maximized")        # Optional: start maximized
 
 chrome_prefs = {
@@ -96,7 +101,7 @@ def reinitialize_driver():
         time.sleep(2)
         scheduling_results_by_path = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Scheduling Results By Path")))
         scheduling_results_by_path.click()
-        logger.info("✅ Reinitialized and navigated back to Allocation Results By Path")
+        logger.info("✅ Reinitialized and navigated back to Scheduling Results By Path")
     except Exception as e:
         logger.info(f"❌ Failed to reinitialize driver: {e}")
 
@@ -153,9 +158,9 @@ def select_dropdown(dropdown_index, option_text):
 def set_date_input(date_str, start=True):
     """
     Sets the date in the datepicker input field directly.
-    
+
     Parameters:
-        date_str (str): The date string to input (e.g., "01/02/2025").
+        date_str (str): The date string to input (e.g., "01/03/2025").
         start (bool): True to set the start date, False for the end date.
     """
     try:
@@ -179,13 +184,19 @@ def click_export_button():
         return False
 
 # ---------------------------------------------------------------------------
-# Calculate dynamic dates:
-# - Start date: always the 1st day of the current month.
-# - End date: always the next day from today.
-current_date = datetime.now()
-start_date_str = f"01/{current_date.month:02d}/{current_date.year}"
-end_date = current_date + timedelta(days=1)
-end_date_str = f"{end_date.day:02d}/{end_date.month:02d}/{end_date.year}"
+# Calculate dynamic dates with Malaysia time zone:
+malaysia_tz = ZoneInfo("Asia/Kuala_Lumpur")
+now_in_malaysia = datetime.now(malaysia_tz)
+
+# Start date: 1st day of current month in Malaysia
+start_date = now_in_malaysia.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+# End date: current date in Malaysia
+end_date = now_in_malaysia
+
+# Format as dd/mm/yyyy
+start_date_str = start_date.strftime("%d/%m/%Y")
+end_date_str = end_date.strftime("%d/%m/%Y")
+
 logger.info(f"Dynamic date range - Start: {start_date_str}, End: {end_date_str}")
 
 # Lists to track summary
@@ -212,7 +223,7 @@ try:
     time.sleep(2)
     scheduling_results_by_path = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Scheduling Results By Path")))
     scheduling_results_by_path.click()
-    logger.info("✅ Successfully navigated to Allocation Results By Path")
+    logger.info("✅ Successfully navigated to Scheduling Results By Path")
     network_dropdown = wait.until(EC.element_to_be_clickable((By.XPATH, "(//span[@class='k-input'])[1]")))
     network_dropdown.click()
     time.sleep(2)
@@ -292,7 +303,6 @@ logger.info("Driver quit. Script finished.")
 
 # ---------------------------------------------------------------------------
 # New Section: Compress downloaded files for GitHub Actions Artifact
-
 def compress_downloads_dir(directory, zip_filename):
     """Compresses all files in the given directory into a ZIP file."""
     with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -304,7 +314,6 @@ def compress_downloads_dir(directory, zip_filename):
                 zipf.write(file_path, arcname=arcname)
     logger.info(f"✅ Compressed files into {zip_filename}")
 
-# Define the ZIP file path (created in base_local_dir)
 zip_filename = os.path.join(base_local_dir, f"{current_month_folder}.zip")
 compress_downloads_dir(base_download_dir, zip_filename)
 
