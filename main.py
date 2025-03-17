@@ -4,7 +4,7 @@ import shutil
 import traceback
 import logging
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo  # <-- For Python 3.9+ time zone support
+from zoneinfo import ZoneInfo  # Python 3.9+ for time zones
 import zipfile
 
 from selenium import webdriver
@@ -20,7 +20,6 @@ from selenium.common.exceptions import WebDriverException, TimeoutException, NoS
 # ---------------------------------------------------------------------------
 # Configuration for local downloads and dynamic folder creation
 base_local_dir = os.path.join(os.getcwd(), "downloads")
-# Current month folder uses 'Month YYYY' format
 current_month_folder = datetime.now().strftime("%B %Y")
 base_download_dir = os.path.join(base_local_dir, current_month_folder)
 os.makedirs(base_download_dir, exist_ok=True)
@@ -49,11 +48,11 @@ logger.info("Starting script...")
 # ---------------------------------------------------------------------------
 # Configure Chrome options for automatic downloading in headless mode
 chrome_options = Options()
-chrome_options.add_argument("--headless")               # Run in headless mode
-chrome_options.add_argument("--disable-gpu")            # Disable GPU usage
-chrome_options.add_argument("--no-sandbox")             # Bypass OS security model
-chrome_options.add_argument("--disable-dev-shm-usage")  # Overcome limited resource problems
-chrome_options.add_argument("--start-maximized")        # Optional: start maximized
+chrome_options.add_argument("--headless")               
+chrome_options.add_argument("--disable-gpu")            
+chrome_options.add_argument("--no-sandbox")             
+chrome_options.add_argument("--disable-dev-shm-usage")  
+chrome_options.add_argument("--start-maximized")        
 
 chrome_prefs = {
     "download.default_directory": base_download_dir,
@@ -143,10 +142,12 @@ def select_dropdown(dropdown_index, option_text):
     """Selects an option from a dropdown list using index (1: Network, 2: Shipper, 3: Unit)."""
     for attempt in range(3):
         try:
-            dropdown = wait.until(EC.element_to_be_clickable((By.XPATH, f"(//span[@class='k-input'])[{dropdown_index}]")))
+            dropdown = wait.until(EC.element_to_be_clickable(
+                (By.XPATH, f"(//span[@class='k-input'])[{dropdown_index}]")))
             dropdown.click()
             time.sleep(1)
-            option = wait.until(EC.presence_of_element_located((By.XPATH, f"//li[contains(text(), '{option_text}')]")))
+            option = wait.until(EC.presence_of_element_located(
+                (By.XPATH, f"//li[contains(text(), '{option_text}')]")))
             option.click()
             logger.info(f"✅ Successfully selected: {option_text}")
             return
@@ -157,7 +158,8 @@ def select_dropdown(dropdown_index, option_text):
 
 def set_date_input(date_str, start=True):
     """
-    Sets the date in the datepicker input field directly.
+    Sets the date in the datepicker input field directly, then logs the final value
+    to check if the site changes it.
 
     Parameters:
         date_str (str): The date string to input (e.g., "01/03/2025").
@@ -169,6 +171,11 @@ def set_date_input(date_str, start=True):
         date_input.clear()
         date_input.send_keys(date_str)
         logger.info(f"✅ Set {'start' if start else 'end'} date to {date_str}")
+
+        # OPTIONAL DEBUG: read back the value from the datepicker to see if the site auto-changed it
+        actual_date = driver.execute_script(
+            f"return document.getElementById('{date_input_id}').value")
+        logger.info(f"   Post-input, the site shows: {date_input_id} => '{actual_date}'")
     except Exception as e:
         logger.error(f"❌ Failed to set {'start' if start else 'end'} date: {e}")
 
@@ -184,20 +191,25 @@ def click_export_button():
         return False
 
 # ---------------------------------------------------------------------------
-# Calculate dynamic dates with Malaysia time zone:
+# Calculate dynamic dates with Malaysia time zone
 malaysia_tz = ZoneInfo("Asia/Kuala_Lumpur")
 now_in_malaysia = datetime.now(malaysia_tz)
 
-# Start date: 1st day of current month in Malaysia
+# Base: 1st day of current month => "today" in MY
 start_date = now_in_malaysia.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-# End date: current date in Malaysia
-end_date = now_in_malaysia
+end_date   = now_in_malaysia
+
+# ---------------------------------------------------------
+# FORCED SHIFT (+1 day) to counter the site’s day-lag
+# ---------------------------------------------------------
+start_date += timedelta(days=1)
+end_date   += timedelta(days=1)
 
 # Format as dd/mm/yyyy
 start_date_str = start_date.strftime("%d/%m/%Y")
-end_date_str = end_date.strftime("%d/%m/%Y")
+end_date_str   = end_date.strftime("%d/%m/%Y")
 
-logger.info(f"Dynamic date range - Start: {start_date_str}, End: {end_date_str}")
+logger.info(f"Dynamic date range (after forced shift) - Start: {start_date_str}, End: {end_date_str}")
 
 # Lists to track summary
 downloaded_networks = []
@@ -224,6 +236,8 @@ try:
     scheduling_results_by_path = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Scheduling Results By Path")))
     scheduling_results_by_path.click()
     logger.info("✅ Successfully navigated to Scheduling Results By Path")
+
+    # Grab network list
     network_dropdown = wait.until(EC.element_to_be_clickable((By.XPATH, "(//span[@class='k-input'])[1]")))
     network_dropdown.click()
     time.sleep(2)
@@ -231,6 +245,7 @@ try:
     network_names = [option.text for option in network_options]
     network_dropdown.click()  # Close the dropdown
     logger.info(f"🔍 Found {len(network_names)} networks: {network_names}")
+
 except Exception as e:
     logger.info(traceback.format_exc())
     driver.quit()
@@ -249,17 +264,26 @@ for network in network_names:
             select_dropdown(1, network)
             select_dropdown(2, "All")
             select_dropdown(3, "GJ")
+
             # Set dynamic dates
             set_date_input(start_date_str, start=True)
             set_date_input(end_date_str, start=False)
+
+            # Click search
             search_button = wait.until(EC.element_to_be_clickable((By.ID, "search")))
             search_button.click()
+
+            # Wait for results to load
             wait_for_loading()
+
+            # Click export
             if not click_export_button():
-                logger.info(f"⚠️ Skipping network '{network}' due to no export button (no data available).")
+                logger.info(f"⚠️ Skipping network '{network}' due to no export button (possibly no data).")
                 skipped_networks.append(network)
                 processed = True
                 break
+
+            # Wait for download
             downloaded_file = wait_for_download(old_files)
             if downloaded_file:
                 new_file_name = format_network_name(network)
@@ -270,14 +294,20 @@ for network in network_names:
             else:
                 logger.info(f"⚠️ No file downloaded for network '{network}'.")
                 skipped_networks.append(network)
+
             time.sleep(5)
             processed = True
+
         except WebDriverException as wde:
             network_retries += 1
-            logger.info(f"⚠️ WebDriverException encountered while processing network '{network}': {wde}. Reinitializing driver and retrying...")
+            logger.info(
+                f"⚠️ WebDriverException encountered while processing '{network}': {wde}. "
+                "Reinitializing driver and retrying..."
+            )
             reinitialize_driver()
+
         except Exception as e:
-            logger.info(f"❌ Exception encountered while processing network '{network}': {e}. Skipping network.")
+            logger.info(f"❌ Exception encountered while processing '{network}': {e}. Skipping network.")
             skipped_networks.append(network)
             processed = True
 
@@ -316,5 +346,4 @@ def compress_downloads_dir(directory, zip_filename):
 
 zip_filename = os.path.join(base_local_dir, f"{current_month_folder}.zip")
 compress_downloads_dir(base_download_dir, zip_filename)
-
 logger.info("Artifact is ready. Use GitHub Actions 'upload-artifact' step to save the ZIP file.")
