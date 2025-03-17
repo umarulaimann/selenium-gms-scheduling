@@ -34,6 +34,10 @@ jobs:
         run: |
           python main.py
 
+      # Ensure the downloads directory exists even if the script produces no files.
+      - name: Ensure downloads directory exists
+        run: mkdir -p downloads
+
       - name: Upload Downloaded Files
         uses: actions/upload-artifact@v2
         with:
