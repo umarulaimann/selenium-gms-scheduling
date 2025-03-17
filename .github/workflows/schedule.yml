@@ -31,6 +31,11 @@ jobs:
           TENANT_ID: ${{ secrets.TENANT_ID }}
           WEBSITE_USERNAME: ${{ secrets.WEBSITE_USERNAME }}
           WEBSITE_PASSWORD: ${{ secrets.WEBSITE_PASSWORD }}
-          # Add any additional secrets as needed.
         run: |
           python main.py
+
+      - name: Upload Downloaded Files
+        uses: actions/upload-artifact@v3
+        with:
+          name: downloaded-files
+          path: downloads/
