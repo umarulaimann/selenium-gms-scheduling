@@ -26,20 +26,24 @@ jobs:
 
       - name: Run the Selenium script
         env:
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-          TENANT_ID: ${{ secrets.TENANT_ID }}
           WEBSITE_USERNAME: ${{ secrets.WEBSITE_USERNAME }}
           WEBSITE_PASSWORD: ${{ secrets.WEBSITE_PASSWORD }}
         run: |
           python main.py
 
-      # Ensure the downloads directory exists even if the script produces no files.
+      # Ensure the downloads directory exists and create a dummy file if empty
       - name: Ensure downloads directory exists
         run: mkdir -p downloads
+
+      - name: Create dummy file if downloads is empty
+        run: |
+          if [ -z "$(ls -A downloads)" ]; then
+            echo "No downloads available" > downloads/dummy.txt
+          fi
 
       - name: Upload Downloaded Files
         uses: actions/upload-artifact@v2
         with:
           name: downloaded-files
           path: downloads/
+          if-no-files-found: warn
