@@ -1,9 +1,8 @@
 name: Run Selenium Script Daily
 
-# Schedule to run at 3:30 PM Kuala Lumpur time (7:30 AM UTC)
 on:
   schedule:
-    - cron: "30 7 * * *"
+    - cron: "30 7 * * *"  # 3:30 PM Kuala Lumpur time (7:30 AM UTC)
   workflow_dispatch:  # Allows manual trigger
 
 jobs:
@@ -31,7 +30,6 @@ jobs:
         run: |
           python main.py
 
-      # Ensure the downloads directory exists and create a dummy file if empty
       - name: Ensure downloads directory exists
         run: mkdir -p downloads
 
@@ -42,8 +40,7 @@ jobs:
           fi
 
       - name: Upload Downloaded Files
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v2.3.1
         with:
           name: downloaded-files
           path: downloads/
-          if-no-files-found: warn
