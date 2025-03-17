@@ -4,9 +4,7 @@ import shutil
 import traceback
 import logging
 from datetime import datetime, timedelta
-
-import msal
-import requests
+import zipfile
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -20,7 +18,6 @@ from selenium.common.exceptions import WebDriverException, TimeoutException, NoS
 
 # ---------------------------------------------------------------------------
 # Configuration for local downloads and dynamic folder creation
-# For cloud automation, we use a relative path within the runner's workspace.
 base_local_dir = os.path.join(os.getcwd(), "downloads")
 current_month_folder = datetime.now().strftime("%B %Y")
 base_download_dir = os.path.join(base_local_dir, current_month_folder)
@@ -43,47 +40,6 @@ console_handler.setFormatter(console_formatter)
 logger.addHandler(console_handler)
 
 logger.info("Starting script...")
-
-# ---------------------------------------------------------------------------
-# Function to obtain an access token from Azure AD using MSAL
-def get_access_token():
-    CLIENT_ID = os.environ.get("CLIENT_ID")
-    CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
-    TENANT_ID = os.environ.get("TENANT_ID")
-    authority = f"https://login.microsoftonline.com/{TENANT_ID}"
-    app = msal.ConfidentialClientApplication(
-        CLIENT_ID,
-        authority=authority,
-        client_credential=CLIENT_SECRET
-    )
-    scope = ["https://graph.microsoft.com/.default"]
-    result = app.acquire_token_for_client(scopes=scope)
-    if "access_token" in result:
-        return result["access_token"]
-    else:
-        raise Exception("Could not obtain access token: " + str(result))
-
-# ---------------------------------------------------------------------------
-# Function to upload a file to SharePoint via Microsoft Graph API
-def upload_file_to_sharepoint(local_file_path, sharepoint_folder, file_name):
-    # Retrieve SharePoint parameters from environment variables
-    SHAREPOINT_SITE = os.environ.get("SHAREPOINT_SITE")  # e.g., "gasmalaysia.sharepoint.com"
-    SITE_PATH = os.environ.get("SITE_PATH")              # e.g., "sites/GasManagementandMonitoringGMM"
-    access_token = get_access_token()
-    headers = {
-        "Authorization": "Bearer " + access_token,
-        "Content-Type": "application/octet-stream"
-    }
-    # Construct the upload URL to upload the file to the specified folder.
-    upload_url = f"https://graph.microsoft.com/v1.0/sites/{SHAREPOINT_SITE}:/{SITE_PATH}:/drive/root:/{sharepoint_folder}/{file_name}:/content"
-    
-    with open(local_file_path, 'rb') as file_stream:
-        response = requests.put(upload_url, headers=headers, data=file_stream)
-    
-    if response.status_code in (200, 201):
-        logger.info(f"✅ File '{file_name}' uploaded successfully to SharePoint folder '{sharepoint_folder}'.")
-    else:
-        logger.error(f"❌ Error uploading file '{file_name}': {response.status_code} {response.text}")
 
 # ---------------------------------------------------------------------------
 # Configure Chrome options for automatic downloading in headless mode
@@ -124,7 +80,6 @@ def reinitialize_driver():
     init_driver()
     try:
         driver.get("https://gms.gasmalaysia.com/pltgtm/cmd.openseal?openSEAL_ck=ViewHome")
-        # Retrieve website credentials from environment variables
         website_username = os.environ.get("WEBSITE_USERNAME")
         website_password = os.environ.get("WEBSITE_PASSWORD")
         username_field = wait.until(EC.visibility_of_element_located((By.ID, "UserCtrl")))
@@ -241,7 +196,6 @@ skipped_networks = []
 # Retrieve network names (once, to avoid reinitialization issues)
 try:
     driver.get("https://gms.gasmalaysia.com/pltgtm/cmd.openseal?openSEAL_ck=ViewHome")
-    # Retrieve website credentials securely from environment variables
     website_username = os.environ.get("WEBSITE_USERNAME")
     website_password = os.environ.get("WEBSITE_PASSWORD")
     username_field = wait.until(EC.visibility_of_element_located((By.ID, "UserCtrl")))
@@ -301,8 +255,6 @@ for network in network_names:
                 new_file_path = os.path.join(base_download_dir, new_file_name)
                 shutil.move(downloaded_file, new_file_path)
                 logger.info(f"✅ Renamed '{downloaded_file}' to '{new_file_path}'")
-                # Upload the file to SharePoint
-                upload_file_to_sharepoint(new_file_path, current_month_folder, new_file_name)
                 downloaded_networks.append(network)
             else:
                 logger.info(f"⚠️ No file downloaded for network '{network}'.")
@@ -337,3 +289,23 @@ else:
 
 driver.quit()
 logger.info("Driver quit. Script finished.")
+
+# ---------------------------------------------------------------------------
+# New Section: Compress downloaded files for GitHub Actions Artifact
+
+def compress_downloads_dir(directory, zip_filename):
+    """Compresses all files in the given directory into a ZIP file."""
+    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                file_path = os.path.join(root, file)
+                # Use relative path for the archive
+                arcname = os.path.relpath(file_path, start=directory)
+                zipf.write(file_path, arcname=arcname)
+    logger.info(f"✅ Compressed files into {zip_filename}")
+
+# Define the ZIP file path (created in base_local_dir)
+zip_filename = os.path.join(base_local_dir, f"{current_month_folder}.zip")
+compress_downloads_dir(base_download_dir, zip_filename)
+
+logger.info("Artifact is ready. Use GitHub Actions 'upload-artifact' step to save the ZIP file.")
