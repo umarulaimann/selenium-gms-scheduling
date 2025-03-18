@@ -36,7 +36,6 @@ logging.basicConfig(
     filemode='w'
 )
 logger = logging.getLogger()
-# Also output logs to console.
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -48,11 +47,11 @@ logger.info("Starting script...")
 # ---------------------------------------------------------------------------
 # Configure Chrome options for automatic downloading in headless mode
 chrome_options = Options()
-chrome_options.add_argument("--headless")               
-chrome_options.add_argument("--disable-gpu")            
-chrome_options.add_argument("--no-sandbox")             
-chrome_options.add_argument("--disable-dev-shm-usage")  
-chrome_options.add_argument("--start-maximized")        
+chrome_options.add_argument("--headless")
+chrome_options.add_argument("--disable-gpu")
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-dev-shm-usage")
+chrome_options.add_argument("--start-maximized")
 
 chrome_prefs = {
     "download.default_directory": base_download_dir,
@@ -70,7 +69,6 @@ def init_driver():
     driver = webdriver.Chrome(service=service, options=chrome_options)
     wait = WebDriverWait(driver, 30)
 
-# Initialize driver
 init_driver()
 
 def reinitialize_driver():
@@ -105,7 +103,7 @@ def reinitialize_driver():
         logger.info(f"❌ Failed to reinitialize driver: {e}")
 
 def wait_for_loading():
-    """Waits for the loading spinner (`k-loading-image`) to disappear."""
+    """Waits for the loading spinner ('k-loading-image') to disappear."""
     logger.info("⏳ Waiting for page to load...")
     while True:
         try:
@@ -158,12 +156,11 @@ def select_dropdown(dropdown_index, option_text):
 
 def set_date_input(date_str, start=True):
     """
-    Sets the date in the datepicker input field directly, then logs the final value
-    to check if the site changes it.
-
+    Sets the date in the datepicker input field directly, then logs the final value.
+    
     Parameters:
-        date_str (str): The date string to input (e.g., "03/03/2025").
-        start (bool): True to set the start date, False for the end date.
+        date_str (str): The date string to input (e.g., "01/03/2025").
+        start (bool): True for the start date, False for the end date.
     """
     try:
         date_input_id = "startdatepicker" if start else "enddatepicker"
@@ -171,8 +168,6 @@ def set_date_input(date_str, start=True):
         date_input.clear()
         date_input.send_keys(date_str)
         logger.info(f"✅ Set {'start' if start else 'end'} date to {date_str}")
-
-        # Read back the value from the datepicker to verify
         actual_date = driver.execute_script(
             f"return document.getElementById('{date_input_id}').value")
         logger.info(f"   Post-input, the site shows: {date_input_id} => '{actual_date}'")
@@ -195,28 +190,23 @@ def click_export_button():
 malaysia_tz = ZoneInfo("Asia/Kuala_Lumpur")
 now_in_malaysia = datetime.now(malaysia_tz)
 
-# Base date range: 1st day of current month to today (in Malaysia time)
-start_date = now_in_malaysia.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-end_date = now_in_malaysia
+# Natural date range:
+# Start date: 1st of current month
+# End date: tomorrow (current date + 1)
+base_start_date = now_in_malaysia.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+base_end_date = now_in_malaysia + timedelta(days=1)
 
-# ---------------------------------------------------------------------------
-# FORCED SHIFT (+2 days) to counter the site's backdating issue.
-# This adjustment changes the range from (01/03 to 18/03) to (03/03 to 20/03)
-start_date += timedelta(days=2)
-end_date += timedelta(days=2)
+start_date_str = base_start_date.strftime("%d/%m/%Y")
+end_date_str = base_end_date.strftime("%d/%m/%Y")
 
-# Format as dd/mm/yyyy
-start_date_str = start_date.strftime("%d/%m/%Y")
-end_date_str = end_date.strftime("%d/%m/%Y")
-
-logger.info(f"Dynamic date range (after forced shift) - Start: {start_date_str}, End: {end_date_str}")
+logger.info(f"Dynamic date range (natural) - Start: {start_date_str}, End: {end_date_str}")
 
 # Lists to track summary
 downloaded_networks = []
 skipped_networks = []
 
 # ---------------------------------------------------------------------------
-# Retrieve network names (once, to avoid reinitialization issues)
+# Retrieve network names
 try:
     driver.get("https://gms.gasmalaysia.com/pltgtm/cmd.openseal?openSEAL_ck=ViewHome")
     website_username = os.environ.get("WEBSITE_USERNAME")
@@ -250,7 +240,7 @@ except Exception as e:
     raise e
 
 # ---------------------------------------------------------------------------
-# Process each network with retry logic on WebDriverException
+# Process each network
 for network in network_names:
     network_retries = 0
     max_network_retries = 3
@@ -263,25 +253,20 @@ for network in network_names:
             select_dropdown(2, "All")
             select_dropdown(3, "GJ")
             
-            # Set dynamic dates
+            # Set the natural date range
             set_date_input(start_date_str, start=True)
             set_date_input(end_date_str, start=False)
             
-            # Click search
+            # Click search and export
             search_button = wait.until(EC.element_to_be_clickable((By.ID, "search")))
             search_button.click()
-            
-            # Wait for results to load
             wait_for_loading()
-            
-            # Click export
             if not click_export_button():
                 logger.info(f"⚠️ Skipping network '{network}' due to no export button (possibly no data).")
                 skipped_networks.append(network)
                 processed = True
                 break
             
-            # Wait for download
             downloaded_file = wait_for_download(old_files)
             if downloaded_file:
                 new_file_name = format_network_name(network)
@@ -298,8 +283,7 @@ for network in network_names:
         except WebDriverException as wde:
             network_retries += 1
             logger.info(
-                f"⚠️ WebDriverException encountered while processing '{network}': {wde}. "
-                "Reinitializing driver and retrying..."
+                f"⚠️ WebDriverException encountered while processing '{network}': {wde}. Reinitializing driver and retrying..."
             )
             reinitialize_driver()
         except Exception as e:
@@ -328,7 +312,7 @@ driver.quit()
 logger.info("Driver quit. Script finished.")
 
 # ---------------------------------------------------------------------------
-# New Section: Compress downloaded files for GitHub Actions Artifact
+# Compress downloaded files for GitHub Actions Artifact
 def compress_downloads_dir(directory, zip_filename):
     """Compresses all files in the given directory into a ZIP file."""
     with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
