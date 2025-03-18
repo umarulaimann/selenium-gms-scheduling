@@ -4,7 +4,7 @@ import shutil
 import traceback
 import logging
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo  # Python 3.9+ for time zones
+from zoneinfo import ZoneInfo  # For Python 3.9+ time zone support
 import zipfile
 
 from selenium import webdriver
@@ -162,7 +162,7 @@ def set_date_input(date_str, start=True):
     to check if the site changes it.
 
     Parameters:
-        date_str (str): The date string to input (e.g., "01/03/2025").
+        date_str (str): The date string to input (e.g., "03/03/2025").
         start (bool): True to set the start date, False for the end date.
     """
     try:
@@ -172,7 +172,7 @@ def set_date_input(date_str, start=True):
         date_input.send_keys(date_str)
         logger.info(f"✅ Set {'start' if start else 'end'} date to {date_str}")
 
-        # OPTIONAL DEBUG: read back the value from the datepicker to see if the site auto-changed it
+        # Read back the value from the datepicker to verify
         actual_date = driver.execute_script(
             f"return document.getElementById('{date_input_id}').value")
         logger.info(f"   Post-input, the site shows: {date_input_id} => '{actual_date}'")
@@ -195,19 +195,19 @@ def click_export_button():
 malaysia_tz = ZoneInfo("Asia/Kuala_Lumpur")
 now_in_malaysia = datetime.now(malaysia_tz)
 
-# Base: 1st day of current month => "today" in MY
+# Base date range: 1st day of current month to today (in Malaysia time)
 start_date = now_in_malaysia.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-end_date   = now_in_malaysia
+end_date = now_in_malaysia
 
-# ---------------------------------------------------------
-# FORCED SHIFT (+1 day) to counter the site’s day-lag
-# ---------------------------------------------------------
-start_date += timedelta(days=1)
-end_date   += timedelta(days=1)
+# ---------------------------------------------------------------------------
+# FORCED SHIFT (+2 days) to counter the site's backdating issue.
+# This adjustment changes the range from (01/03 to 18/03) to (03/03 to 20/03)
+start_date += timedelta(days=2)
+end_date += timedelta(days=2)
 
 # Format as dd/mm/yyyy
 start_date_str = start_date.strftime("%d/%m/%Y")
-end_date_str   = end_date.strftime("%d/%m/%Y")
+end_date_str = end_date.strftime("%d/%m/%Y")
 
 logger.info(f"Dynamic date range (after forced shift) - Start: {start_date_str}, End: {end_date_str}")
 
@@ -236,8 +236,7 @@ try:
     scheduling_results_by_path = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Scheduling Results By Path")))
     scheduling_results_by_path.click()
     logger.info("✅ Successfully navigated to Scheduling Results By Path")
-
-    # Grab network list
+    
     network_dropdown = wait.until(EC.element_to_be_clickable((By.XPATH, "(//span[@class='k-input'])[1]")))
     network_dropdown.click()
     time.sleep(2)
@@ -245,7 +244,6 @@ try:
     network_names = [option.text for option in network_options]
     network_dropdown.click()  # Close the dropdown
     logger.info(f"🔍 Found {len(network_names)} networks: {network_names}")
-
 except Exception as e:
     logger.info(traceback.format_exc())
     driver.quit()
@@ -264,25 +262,25 @@ for network in network_names:
             select_dropdown(1, network)
             select_dropdown(2, "All")
             select_dropdown(3, "GJ")
-
+            
             # Set dynamic dates
             set_date_input(start_date_str, start=True)
             set_date_input(end_date_str, start=False)
-
+            
             # Click search
             search_button = wait.until(EC.element_to_be_clickable((By.ID, "search")))
             search_button.click()
-
+            
             # Wait for results to load
             wait_for_loading()
-
+            
             # Click export
             if not click_export_button():
                 logger.info(f"⚠️ Skipping network '{network}' due to no export button (possibly no data).")
                 skipped_networks.append(network)
                 processed = True
                 break
-
+            
             # Wait for download
             downloaded_file = wait_for_download(old_files)
             if downloaded_file:
@@ -294,10 +292,9 @@ for network in network_names:
             else:
                 logger.info(f"⚠️ No file downloaded for network '{network}'.")
                 skipped_networks.append(network)
-
+            
             time.sleep(5)
             processed = True
-
         except WebDriverException as wde:
             network_retries += 1
             logger.info(
@@ -305,7 +302,6 @@ for network in network_names:
                 "Reinitializing driver and retrying..."
             )
             reinitialize_driver()
-
         except Exception as e:
             logger.info(f"❌ Exception encountered while processing '{network}': {e}. Skipping network.")
             skipped_networks.append(network)
@@ -339,7 +335,6 @@ def compress_downloads_dir(directory, zip_filename):
         for root, dirs, files in os.walk(directory):
             for file in files:
                 file_path = os.path.join(root, file)
-                # Use relative path for the archive
                 arcname = os.path.relpath(file_path, start=directory)
                 zipf.write(file_path, arcname=arcname)
     logger.info(f"✅ Compressed files into {zip_filename}")
