@@ -27,6 +27,9 @@ jobs:
         env:
           WEBSITE_USERNAME: ${{ secrets.WEBSITE_USERNAME }}
           WEBSITE_PASSWORD: ${{ secrets.WEBSITE_PASSWORD }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MY_GITHUB_EMAIL: ${{ secrets.MY_GITHUB_EMAIL }}
         run: |
           python main.py
 
