@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo  # For Python 3.9+ time zone support
 import zipfile
 
-# Force the system to use Asia/Kuala_Lumpur time zone.
+# Force system time zone to Asia/Kuala_Lumpur (Linux/GitHub Actions)
 os.environ['TZ'] = 'Asia/Kuala_Lumpur'
 time.tzset()
 
@@ -56,7 +56,6 @@ chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--start-maximized")
-# Optionally, set the language (optional, but sometimes helps)
 chrome_options.add_argument("--lang=ms-MY")
 
 chrome_prefs = {
@@ -193,12 +192,12 @@ def click_export_button():
 
 # ---------------------------------------------------------------------------
 # Calculate dynamic dates with Malaysia time zone
-# Natural date range:
-# Start date: 1st of the current month
-# End date: tomorrow (current date + 1)
 malaysia_tz = ZoneInfo("Asia/Kuala_Lumpur")
 now_in_malaysia = datetime.now(malaysia_tz)
 
+# Natural date range:
+# Start date: 1st of current month
+# End date: tomorrow (current date + 1)
 base_start_date = now_in_malaysia.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 base_end_date = now_in_malaysia + timedelta(days=1)
 
@@ -206,6 +205,11 @@ start_date_str = base_start_date.strftime("%d/%m/%Y")
 end_date_str = base_end_date.strftime("%d/%m/%Y")
 
 logger.info(f"Dynamic date range (natural) - Start: {start_date_str}, End: {end_date_str}")
+
+# ---------------------------------------------------------------------------
+# Define global lists for tracking downloaded and skipped networks
+downloaded_networks = []
+skipped_networks = []
 
 # ---------------------------------------------------------------------------
 # Retrieve network names
