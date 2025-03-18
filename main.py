@@ -6,13 +6,8 @@ import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo  # For Python 3.9+ time zone support
 import zipfile
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email import encoders
 
-# Force system time zone to Asia/Kuala_Lumpur (for Linux/GitHub Actions)
+# Force system time zone to Asia/Kuala_Lumpur (Linux/GitHub Actions)
 os.environ['TZ'] = 'Asia/Kuala_Lumpur'
 time.tzset()
 
@@ -25,43 +20,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import WebDriverException, TimeoutException, NoSuchElementException
-
-# ---------------------------------------------------------------------------
-# Function to send an email notification using Gmail SMTP with attachment
-def send_notification_email(subject, body, to_email, attachment_path=None):
-    smtp_server = "smtp.gmail.com"
-    smtp_port = 587
-    smtp_user = os.environ.get("SMTP_USER")  # Your Gmail address
-    smtp_pass = os.environ.get("SMTP_PASS")  # Your Gmail password or app password
-
-    msg = MIMEMultipart()
-    msg["From"] = smtp_user
-    msg["To"] = to_email
-    msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain"))
-
-    # Attach the ZIP file if provided
-    if attachment_path and os.path.exists(attachment_path):
-        try:
-            with open(attachment_path, "rb") as attachment:
-                part = MIMEBase("application", "octet-stream")
-                part.set_payload(attachment.read())
-            encoders.encode_base64(part)
-            part.add_header("Content-Disposition", f"attachment; filename= {os.path.basename(attachment_path)}")
-            msg.attach(part)
-            logger.info(f"✅ Attached file: {attachment_path}")
-        except Exception as e:
-            logger.error(f"❌ Failed to attach file: {e}")
-
-    try:
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, to_email, msg.as_string())
-        server.quit()
-        logger.info("✅ Notification email sent successfully.")
-    except Exception as e:
-        logger.error(f"❌ Failed to send notification email: {e}")
 
 # ---------------------------------------------------------------------------
 # Configuration for local downloads and dynamic folder creation
@@ -234,12 +192,12 @@ def click_export_button():
 
 # ---------------------------------------------------------------------------
 # Calculate dynamic dates with Malaysia time zone
-# Natural date range:
-#   Start date: 1st of the current month
-#   End date: Tomorrow (current date + 1)
 malaysia_tz = ZoneInfo("Asia/Kuala_Lumpur")
 now_in_malaysia = datetime.now(malaysia_tz)
 
+# Natural date range:
+# Start date: 1st of current month
+# End date: tomorrow (current date + 1)
 base_start_date = now_in_malaysia.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 base_end_date = now_in_malaysia + timedelta(days=1)
 
@@ -374,12 +332,3 @@ def compress_downloads_dir(directory, zip_filename):
 zip_filename = os.path.join(base_local_dir, f"{current_month_folder}.zip")
 compress_downloads_dir(base_download_dir, zip_filename)
 logger.info("Artifact is ready. Use GitHub Actions 'upload-artifact' step to save the ZIP file.")
-
-# ---------------------------------------------------------------------------
-# Send email notification with the ZIP file attached using Gmail SMTP
-send_notification_email(
-    subject="GMS Scheduling Automation Complete",
-    body="The automation has finished downloading and processing all networks successfully. Please find the attached ZIP file containing the results.",
-    to_email=os.environ.get("MY_GITHUB_EMAIL"),
-    attachment_path=zip_filename
-)
