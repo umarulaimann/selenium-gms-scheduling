@@ -27,20 +27,19 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import WebDriverException, TimeoutException, NoSuchElementException
 
 # ---------------------------------------------------------------------------
-# Function to send an email notification using Outlook SMTP with attachment
+# Function to send an email notification using Gmail SMTP with attachment
 def send_notification_email(subject, body, to_email, attachment_path=None):
-    smtp_server = "smtp.office365.com"
+    smtp_server = "smtp.gmail.com"
     smtp_port = 587
-    smtp_user = os.environ.get("SMTP_USER")  # Your Outlook email address
-    smtp_pass = os.environ.get("SMTP_PASS")  # Your Outlook password or app password
-    
+    smtp_user = os.environ.get("SMTP_USER")  # Your Gmail address
+    smtp_pass = os.environ.get("SMTP_PASS")  # Your Gmail password or app password
+
     msg = MIMEMultipart()
     msg["From"] = smtp_user
     msg["To"] = to_email
     msg["Subject"] = subject
-
     msg.attach(MIMEText(body, "plain"))
-    
+
     # Attach the ZIP file if provided
     if attachment_path and os.path.exists(attachment_path):
         try:
@@ -53,7 +52,7 @@ def send_notification_email(subject, body, to_email, attachment_path=None):
             logger.info(f"✅ Attached file: {attachment_path}")
         except Exception as e:
             logger.error(f"❌ Failed to attach file: {e}")
-    
+
     try:
         server = smtplib.SMTP(smtp_server, smtp_port)
         server.starttls()
@@ -377,7 +376,7 @@ compress_downloads_dir(base_download_dir, zip_filename)
 logger.info("Artifact is ready. Use GitHub Actions 'upload-artifact' step to save the ZIP file.")
 
 # ---------------------------------------------------------------------------
-# Send email notification with the ZIP file attached
+# Send email notification with the ZIP file attached using Gmail SMTP
 send_notification_email(
     subject="GMS Scheduling Automation Complete",
     body="The automation has finished downloading and processing all networks successfully. Please find the attached ZIP file containing the results.",
